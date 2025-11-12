@@ -193,79 +193,33 @@ pub struct PlayerWin {
 
 pub fn parse_ohh_chunks(text: &str) -> Result<Vec<OhhHand>, String> {
     debug!("parse_ohh_chunks called with {} bytes", text.len());
-
-    let re_blank = Regex::new(r"\n\s*\n").map_err(|e| e.to_string())?;
-    let mut chunks: Vec<&str> = re_blank.split(text).collect();
-
-    debug!("Split into {} chunks by blank lines", chunks.len());
-
-    if chunks.len() == 1 {
-        chunks = text.lines().collect();
-        debug!("Only 1 chunk, splitting by lines: {} chunks", chunks.len());
-    }
-
     let mut hands = Vec::new();
-    let mut errors = Vec::new();
-    let mut skipped_count = 0;
 
-    for (idx, chunk) in chunks.iter().enumerate() {
-        let chunk = chunk.trim();
-        if chunk.is_empty() || (!chunk.starts_with('{') && !chunk.starts_with('[')) {
-            continue;
-        }
-
-        if chunk.len() < 50 {
-            skipped_count += 1;
-            continue;
-        }
-
-        debug!("Processing chunk {} (size: {} bytes)", idx, chunk.len());
+    for (idx, chunk) in text.split("\n\n").enumerate() {
+        let preview = &chunk.chars().take(200).collect::<String>();
 
         match serde_json::from_str::<OhhFile>(chunk) {
             Ok(data) => {
-                debug!("Successfully parsed chunk {} as OhhFile (game #{})", idx, data.ohh.game_number);
-                hands.push(data.ohh);
+                debug!("parsed OhhFile chunk {}", idx);
+                hands.extend(data.hands);
             }
             Err(e1) => match serde_json::from_str::<OhhHand>(chunk) {
                 Ok(hand) => {
-                    debug!("Successfully parsed chunk {} as OhhHand (game #{})", idx, hand.game_number);
+                    debug!("parsed OhhHand chunk {}", idx);
                     hands.push(hand);
                 }
                 Err(e2) => {
-                    let preview = if chunk.len() > 100 {
-                        format!("{}...", &chunk[..100])
-                    } else {
-                        chunk.to_string()
-                    };
-                    let err_msg = format!(
-                        "Chunk {}: Failed to parse (OhhFile: {}, OhhHand: {}). Preview: {}",
+                    warn!(
+                        "chunk {}: failed to parse (OhhFile: {}, OhhHand: {}). preview: {}",
                         idx, e1, e2, preview
                     );
-                    warn!("{}", err_msg);
-                    errors.push(err_msg);
-                    continue;
                 }
             },
         }
     }
 
-    info!("Parsing complete: {} hands parsed, {} skipped, {} errors",
-          hands.len(), skipped_count, errors.len());
-
-    if skipped_count > 0 || !errors.is_empty() {
-        warn!("Parsing issues detected:");
-        if skipped_count > 0 {
-            warn!("  - Skipped {} short chunks (< 50 chars)", skipped_count);
-        }
-        if !errors.is_empty() {
-            warn!("  - Failed to parse {} chunks:", errors.len());
-            for (i, err) in errors.iter().take(5).enumerate() {
-                warn!("    {}. {}", i + 1, err);
-            }
-            if errors.len() > 5 {
-                warn!("    ... and {} more errors", errors.len() - 5);
-            }
-        }
+    if hands.is_empty() {
+        return Err("no valid hands could be parsed. please check your file format.".to_string());
     }
 
     Ok(hands)
