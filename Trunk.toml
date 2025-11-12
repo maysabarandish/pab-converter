@@ -1,5 +1,6 @@
 [build]
 target = "./index.html"
+public_url = "/pab-converter/"
 
 [watch]
 ignore = ["./src-tauri"]
